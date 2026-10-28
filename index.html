@@ -53,7 +53,7 @@ footer button{font:inherit;font-size:13px;color:var(--ink);background:none;borde
 <div id="msg"></div>
 <div id="list"></div>
 <nav class="tools" id="tools"></nav>
-<footer><button id="tok" type="button">Raindropトークンを設定</button><button id="edit" type="button">リンクを編集</button></footer>
+<footer><button id="tok" type="button">Raindropトークンを設定</button><button id="hide" type="button">非表示コレクション</button><button id="edit" type="button">リンクを編集</button></footer>
 </main>
 <script>
 var API="https://api.raindrop.io/rest/v1";
@@ -61,6 +61,14 @@ var $=function(id){return document.getElementById(id)};
 function ls(k,v){try{if(v===undefined){var s=localStorage.getItem(k);return s?JSON.parse(s):null}localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}}
 var token=ls("rd_token")||"";
 var cur=0,query="",cols=ls("rd_cols")||[],timer=null;
+/* 非表示にするコレクション名(初期値:個人研究)。その中のサブコレクションも隠す */
+function hiddenIds(){
+ var h=ls("rd_hidden");if(!h)h=["個人研究"];
+ var ids={},ch=true;
+ while(ch){ch=false;cols.forEach(function(c){
+  if(!ids[c._id]&&(h.indexOf(c.title)>=0||(c.parent&&ids[c.parent]))){ids[c._id]=1;ch=true}})}
+ return ids;
+}
 
 /* ---- 時計・あいさつ・聖句リンク ---- */
 var W=["日","月","火","水","木","金","土"];
@@ -97,8 +105,8 @@ function api(path){
 }
 function msg(t){$("msg").textContent=t}
 function renderChips(){
- var c=$("chips");c.innerHTML="";
- [{_id:0,title:"すべて"}].concat(cols).forEach(function(x){
+ var c=$("chips");c.innerHTML="";var hid=hiddenIds();
+ [{_id:0,title:"すべて"}].concat(cols.filter(function(x){return !hid[x._id]})).forEach(function(x){
   var b=document.createElement("button");b.type="button";b.textContent=x.title;
   b.setAttribute("aria-pressed",String(x._id===cur&&!query));
   b.onclick=function(){cur=x._id;query="";$("q").value="";renderChips();loadList()};
@@ -121,21 +129,23 @@ function loadList(){
  if(!token)return;
  var key="rd_list_"+cur+"_"+query;
  var cached=ls(key);
- if(cached){renderList(cached);msg("")}else{msg("読み込み中…")}
- var path="/raindrops/"+cur+"?perpage=60&sort=-created"+(query?"&search="+encodeURIComponent(query):"");
+ function vis(a){var hid=hiddenIds();return a.filter(function(i){return !hid[i.col]})}
+ if(cached){renderList(vis(cached));msg("")}else{msg("読み込み中…")}
+ var path="/raindrops/"+cur+"?perpage=50&sort=-created"+(query?"&search="+encodeURIComponent(query):"");
  api(path).then(function(j){
-  var items=(j.items||[]).map(function(i){return{title:i.title,link:i.link,domain:i.domain}});
-  ls(key,items);renderList(items);
-  msg(items.length?"":"該当するブックマークがありません");
+  var items=(j.items||[]).map(function(i){return{title:i.title,link:i.link,domain:i.domain,col:i.collection&&i.collection.$id}});
+  ls(key,items);var v=vis(items);renderList(v);
+  msg(v.length?"":"該当するブックマークがありません");
  }).catch(function(e){
   if(!cached)msg("Raindropを読み込めませんでした("+e.message+")。トークンと通信状況を確認してください。");
  });
 }
 function loadCols(){
  if(!token)return;
+ var first=!cols.length;
  Promise.all([api("/collections"),api("/collections/childrens")]).then(function(r){
-  cols=(r[0].items||[]).concat(r[1].items||[]).map(function(c){return{_id:c._id,title:c.title}});
-  ls("rd_cols",cols);renderChips();
+  cols=(r[0].items||[]).concat(r[1].items||[]).map(function(c){return{_id:c._id,title:c.title,parent:c.parent&&c.parent.$id}});
+  ls("rd_cols",cols);renderChips();if(first)loadList();
  }).catch(function(){});
 }
 function setToken(){
@@ -144,6 +154,13 @@ function setToken(){
  token=t.trim();ls("rd_token",token);init();
 }
 $("tok").onclick=setToken;
+$("hide").onclick=function(){
+ var h=ls("rd_hidden");if(!h)h=["個人研究"];
+ var t=prompt("表示しないコレクション名を、カンマ区切りで入力(空欄で全部表示)。中のサブコレクションも隠れます。",h.join(","));
+ if(t===null)return;
+ ls("rd_hidden",t.split(",").map(function(x){return x.trim()}).filter(Boolean));
+ cur=0;renderChips();loadList();
+};
 $("q").addEventListener("input",function(){
  clearTimeout(timer);var v=this.value.trim();
  timer=setTimeout(function(){query=v;renderChips();loadList()},350);
