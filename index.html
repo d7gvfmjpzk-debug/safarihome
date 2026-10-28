@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>スタートページ</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@300;500&display=swap" rel="stylesheet">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--ink:#fff;--glass:rgba(255,255,255,.16);--glass-h:rgba(255,255,255,.28);--sky1:#f6a56b;--sky2:#6a7fd1}
+html{height:100%}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;min-height:100%;font-family:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;color:var(--ink);background:linear-gradient(170deg,var(--sky1),var(--sky2)) fixed;transition:background 1s}
+main{max-width:900px;margin:0 auto;padding:5vh 24px 40px;display:flex;flex-direction:column;gap:22px}
+header{text-align:center}
+#clock{font-size:clamp(64px,14vw,112px);font-weight:300;letter-spacing:.02em;line-height:1}
+#date{font-size:17px;margin-top:6px;opacity:.9}
+#greet{font-size:20px;font-weight:500;margin-top:14px}
+input[type=search]{width:100%;font:inherit;font-size:17px;color:var(--ink);background:var(--glass);border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:14px 22px;outline:none}
+input::placeholder{color:rgba(255,255,255,.75)}
+input:focus,a:focus-visible,button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.verse{display:block;text-decoration:none;color:var(--ink);background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.4);border-radius:20px;padding:16px 22px}
+.verse b{font-size:18px;font-weight:500}
+.verse span{display:block;font-size:13px;opacity:.9;margin-top:3px}
+#chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+#chips button{flex:none;font:inherit;font-size:14px;color:var(--ink);background:var(--glass);border:1px solid transparent;border-radius:999px;padding:8px 16px;white-space:nowrap}
+#chips button[aria-pressed=true]{background:rgba(255,255,255,.38);border-color:rgba(255,255,255,.7);font-weight:500}
+#list{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+#list a{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--ink);background:var(--glass);border-radius:14px;padding:12px 14px;min-width:0}
+#list a:active{background:var(--glass-h)}
+#list img{width:24px;height:24px;border-radius:6px;flex:none;background:rgba(255,255,255,.3)}
+#list .t{min-width:0}
+#list .t b{display:block;font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#list .t span{display:block;font-size:12px;opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#msg{text-align:center;font-size:14px;line-height:1.7;opacity:.95}
+.tools{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.tools a{display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;color:var(--ink);background:var(--glass);border-radius:14px;padding:14px 8px;font-size:14px;font-weight:500}
+footer{text-align:center;display:flex;gap:10px;justify-content:center}
+footer button{font:inherit;font-size:13px;color:var(--ink);background:none;border:1px solid rgba(255,255,255,.4);border-radius:999px;padding:6px 16px;opacity:.85}
+@media (prefers-color-scheme:dark){:root{--glass:rgba(0,0,0,.22);--glass-h:rgba(0,0,0,.36)}}
+</style>
+</head>
+<body>
+<main>
+<header>
+<div id="clock">--:--</div>
+<div id="date"></div>
+<div id="greet"></div>
+</header>
+<input type="search" id="q" placeholder="Raindropを検索(Enterでウェブ検索)" aria-label="検索" autocomplete="off">
+<a class="verse" id="verse" href="#" rel="noopener"><b>今日の聖句</b><span id="vdate"></span></a>
+<div id="chips" role="group" aria-label="コレクション"></div>
+<div id="msg"></div>
+<div id="list"></div>
+<nav class="tools" id="tools"></nav>
+<footer><button id="tok" type="button">Raindropトークンを設定</button><button id="edit" type="button">リンクを編集</button></footer>
+</main>
+<script>
+var API="https://api.raindrop.io/rest/v1";
+var $=function(id){return document.getElementById(id)};
+function ls(k,v){try{if(v===undefined){var s=localStorage.getItem(k);return s?JSON.parse(s):null}localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}}
+var token=ls("rd_token")||"";
+var cur=0,query="",cols=ls("rd_cols")||[],timer=null;
+
+/* ---- 時計・あいさつ・聖句リンク ---- */
+var W=["日","月","火","水","木","金","土"];
+var SKY=[["#14213d","#3a3f7a"],["#f6a56b","#6a7fd1"],["#5db4e8","#a8dcf5"],["#f08a5d","#7b5ea7"],["#14213d","#3a3f7a"]];
+function tick(){
+ var d=new Date(),h=d.getHours(),m=d.getMinutes();
+ $("clock").textContent=("0"+h).slice(-2)+":"+("0"+m).slice(-2);
+ var ds=(d.getMonth()+1)+"月"+d.getDate()+"日("+W[d.getDay()]+")";
+ $("date").textContent=d.getFullYear()+"年"+ds;
+ $("greet").textContent=h<5?"夜更かしですね":h<11?"おはようございます":h<17?"こんにちは":h<21?"こんばんは":"おつかれさまです";
+ var k=h<5?0:h<9?1:h<16?2:h<19?3:4,r=document.documentElement.style;
+ r.setProperty("--sky1",SKY[k][0]);r.setProperty("--sky2",SKY[k][1]);
+ $("verse").href="https://wol.jw.org/ja/wol/dt/r7/lp-j/"+d.getFullYear()+"/"+(d.getMonth()+1)+"/"+d.getDate();
+ $("vdate").textContent=ds+"の日々の聖句を読む";
+}
+tick();setInterval(tick,30000);
+
+/* ---- その他のリンク ---- */
+var DEF=[{n:"Notion",i:"📝",u:"https://www.notion.so"},{n:"カレンダー",i:"📅",u:"calshow://"},{n:"リマインダー",i:"✅",u:"x-apple-reminderkit://"}];
+var links=ls("links")||DEF;
+function renderLinks(){var t=$("tools");t.innerHTML="";links.forEach(function(l){var a=document.createElement("a");a.href=l.u;a.textContent=l.i+" "+l.n;t.appendChild(a)})}
+renderLinks();
+$("edit").onclick=function(){
+ var t=prompt("1行に「名前,URL,絵文字」の形式で入力",links.map(function(l){return l.n+","+l.u+","+l.i}).join("\n"));
+ if(t===null)return;
+ var out=t.split("\n").map(function(x){var p=x.split(",");return p.length>=2?{n:p[0].trim(),u:p[1].trim(),i:(p[2]||"🔗").trim()}:null}).filter(Boolean);
+ links=out;ls("links",out);renderLinks();
+};
+
+/* ---- Raindrop ---- */
+function api(path){
+ return fetch(API+path,{headers:{Authorization:"Bearer "+token}}).then(function(r){
+  if(!r.ok)throw new Error("HTTP "+r.status);return r.json()});
+}
+function msg(t){$("msg").textContent=t}
+function renderChips(){
+ var c=$("chips");c.innerHTML="";
+ [{_id:0,title:"すべて"}].concat(cols).forEach(function(x){
+  var b=document.createElement("button");b.type="button";b.textContent=x.title;
+  b.setAttribute("aria-pressed",String(x._id===cur&&!query));
+  b.onclick=function(){cur=x._id;query="";$("q").value="";renderChips();loadList()};
+  c.appendChild(b);
+ });
+}
+function renderList(items){
+ var l=$("list");l.innerHTML="";
+ items.forEach(function(it){
+  var a=document.createElement("a");a.href=it.link;a.rel="noopener";
+  var im=document.createElement("img");im.alt="";im.loading="lazy";
+  im.src="https://www.google.com/s2/favicons?sz=64&domain="+encodeURIComponent(it.domain||"");
+  var d=document.createElement("div");d.className="t";
+  var b=document.createElement("b");b.textContent=it.title||it.link;
+  var s=document.createElement("span");s.textContent=it.domain||"";
+  d.appendChild(b);d.appendChild(s);a.appendChild(im);a.appendChild(d);l.appendChild(a);
+ });
+}
+function loadList(){
+ if(!token)return;
+ var key="rd_list_"+cur+"_"+query;
+ var cached=ls(key);
+ if(cached){renderList(cached);msg("")}else{msg("読み込み中…")}
+ var path="/raindrops/"+cur+"?perpage=60&sort=-created"+(query?"&search="+encodeURIComponent(query):"");
+ api(path).then(function(j){
+  var items=(j.items||[]).map(function(i){return{title:i.title,link:i.link,domain:i.domain}});
+  ls(key,items);renderList(items);
+  msg(items.length?"":"該当するブックマークがありません");
+ }).catch(function(e){
+  if(!cached)msg("Raindropを読み込めませんでした("+e.message+")。トークンと通信状況を確認してください。");
+ });
+}
+function loadCols(){
+ if(!token)return;
+ Promise.all([api("/collections"),api("/collections/childrens")]).then(function(r){
+  cols=(r[0].items||[]).concat(r[1].items||[]).map(function(c){return{_id:c._id,title:c.title}});
+  ls("rd_cols",cols);renderChips();
+ }).catch(function(){});
+}
+function setToken(){
+ var t=prompt("Raindropのテストトークンを貼り付けてください(app.raindrop.io → 設定 → 連携 → アプリを作成)",token);
+ if(t===null)return;
+ token=t.trim();ls("rd_token",token);init();
+}
+$("tok").onclick=setToken;
+$("q").addEventListener("input",function(){
+ clearTimeout(timer);var v=this.value.trim();
+ timer=setTimeout(function(){query=v;renderChips();loadList()},350);
+});
+$("q").addEventListener("keydown",function(e){
+ if(e.key==="Enter"&&this.value.trim()){location.href="https://www.google.com/search?q="+encodeURIComponent(this.value.trim())}
+});
+function init(){
+ if(!token){msg("右下の「Raindropトークンを設定」から、テストトークンを入力すると、ブックマークがここに表示されます。");$("list").innerHTML="";renderChips();return}
+ renderChips();loadList();loadCols();
+}
+init();
+</script>
+</body>
+</html>
